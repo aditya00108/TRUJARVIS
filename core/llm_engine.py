@@ -5,7 +5,7 @@ TRUJARVIS - Advanced LLM Engine
 Handles local LLM communication, streaming,
 generation parameters and conversation context.
 """
-
+"""
 import ollama
 
 from core.config import (
@@ -163,6 +163,163 @@ class LLMEngine:
 
                 if content:
                     yield content
+
+        except Exception as error:
+
+            raise RuntimeError(
+                f"TRUJARVIS AI Engine Error: {error}"
+            ) from error
+"""
+
+"""
+TRUJARVIS - Advanced LLM Engine
+
+Compatibility layer between the Streamlit application
+and the new provider-based AI architecture.
+"""
+
+from collections.abc import Iterator
+
+from core.config import (
+    MODEL_NAME,
+    TEMPERATURE,
+    SYSTEM_PROMPT,
+    MAX_HISTORY_MESSAGES,
+)
+
+from core.model_router import ModelRouter
+from providers.ollama_provider import OllamaProvider
+
+
+class LLMEngine:
+
+    def __init__(self):
+
+        # Initialize the model router
+        self.router = ModelRouter()
+
+        # Register local Ollama provider
+        self.router.register_provider(
+            name="ollama",
+            provider=OllamaProvider(),
+            make_default=True,
+        )
+
+        self.model = MODEL_NAME
+
+        # Default generation settings
+        self.default_options = {
+            "temperature": TEMPERATURE,
+            "top_p": 0.9,
+            "num_ctx": 2048,
+            "num_predict": 512,
+            "repeat_penalty": 1.1,
+        }
+
+    # ------------------------------------------
+    # CONNECTION CHECK
+    # ------------------------------------------
+
+    def check_connection(self):
+
+        return self.router.check_connection()
+
+    # ------------------------------------------
+    # AVAILABLE MODELS
+    # ------------------------------------------
+
+    def get_available_models(self):
+
+        return self.router.list_models()
+
+    # ------------------------------------------
+    # GENERATION OPTIONS
+    # ------------------------------------------
+
+    def build_options(
+        self,
+        temperature=None,
+        top_p=None,
+        num_ctx=None,
+        num_predict=None,
+        repeat_penalty=None,
+    ):
+
+        options = self.default_options.copy()
+
+        custom_options = {
+            "temperature": temperature,
+            "top_p": top_p,
+            "num_ctx": num_ctx,
+            "num_predict": num_predict,
+            "repeat_penalty": repeat_penalty,
+        }
+
+        for key, value in custom_options.items():
+
+            if value is not None:
+                options[key] = value
+
+        return options
+
+    # ------------------------------------------
+    # STREAMING RESPONSE GENERATION
+    # ------------------------------------------
+
+    def generate_response(
+        self,
+        messages,
+        temperature=None,
+        top_p=None,
+        num_ctx=None,
+        num_predict=None,
+        repeat_penalty=None,
+        system_prompt=None,
+        model=None,
+    ):
+
+        if not messages:
+            raise ValueError(
+                "Conversation messages cannot be empty."
+            )
+
+        # Limit conversation history
+        recent_messages = messages[-MAX_HISTORY_MESSAGES:]
+
+        # Prepare system prompt
+        active_system_prompt = (
+            system_prompt
+            if system_prompt is not None
+            else SYSTEM_PROMPT
+        )
+
+        formatted_messages = [
+            {
+                "role": "system",
+                "content": active_system_prompt,
+            }
+        ] + recent_messages
+
+        # Prepare generation options
+        options = self.build_options(
+            temperature=temperature,
+            top_p=top_p,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            repeat_penalty=repeat_penalty,
+        )
+
+        active_model = model or self.model
+
+        try:
+
+            # Generate response through ModelRouter
+            yield from self.router.generate_response(
+                messages=formatted_messages,
+                model=active_model,
+                options=options,
+                provider_name="ollama",
+            )
 
         except Exception as error:
 
